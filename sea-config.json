@@ -1,0 +1,10 @@
+{
+  "main": "barcode.bundle.js",
+  "output": "barcode.blob",
+  "disableExperimentalSEAWarning": true,
+  "useSnapshot": false,
+  "useCodeCache": false,
+  "assets": {
+    "index.html": "public/index.html"
+  }
+}

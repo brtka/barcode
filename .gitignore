@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.blob
+barcode.exe
+package-lock.json

@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0d1117">
+<title>Zebra SSI — barcode</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-2: #161b22;
+    --bg-3: #21262d;
+    --bg-4: #30363d;
+    --border: #30363d;
+    --border-soft: #21262d;
+    --text: #e6edf3;
+    --text-2: #b1bac4;
+    --text-dim: #848d97;
+    --accent: #2f81f7;
+    --accent-hot: #58a6ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --tx: #d29922;
+    --rx: #58a6ff;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 var(--ui);
+    user-select: none;
+  }
+  button, select, input {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  button { cursor: pointer; }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  input, select { padding: 0 12px; background: var(--bg-2); }
+  select { appearance: none; -webkit-appearance: none; padding-right: 32px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%23b1bac4' stroke-width='1.5' fill='none'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+
+  /* ---------- Layout ---------- */
+  .app { display: grid; grid-template-rows: 64px 1fr; height: 100%; }
+  .topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 16px;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .main {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    min-height: 0;
+  }
+  .sidebar {
+    background: var(--bg-2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .content {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    min-height: 0;
+    padding: 16px;
+    gap: 16px;
+  }
+
+  /* ---------- Topbar ---------- */
+  .status-pill {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 14px; height: 40px;
+    background: var(--bg-3);
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-dim); }
+  .dot.connected { background: var(--ok); box-shadow: 0 0 0 4px rgba(63, 185, 80, 0.2); }
+  .dot.connecting { background: var(--warn); animation: pulse 1s infinite; }
+  .dot.error { background: var(--err); }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  .connect-form { display: flex; gap: 8px; align-items: center; }
+  .connect-form select, .connect-form input { height: 40px; }
+  .connect-form #port-select { min-width: 200px; }
+  .connect-form #baud-input { width: 90px; text-align: center; }
+  .connect-form button {
+    height: 40px;
+    padding: 0 16px;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+  .connect-form button.disconnect {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-2);
+  }
+
+  .topbar-actions { margin-left: auto; display: flex; gap: 8px; }
+  .icon-btn {
+    width: 40px; height: 40px;
+    background: var(--bg-3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .icon-btn:hover { background: var(--bg-4); }
+
+  /* ---------- Sidebar: commands ---------- */
+  .group { display: flex; flex-direction: column; gap: 8px; }
+  .group h3 {
+    margin: 0 0 4px;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+  .btn {
+    height: 56px;
+    padding: 0 16px;
+    background: var(--bg-3);
+    border-color: var(--border);
+    color: var(--text);
+    font-weight: 600;
+    text-align: left;
+    transition: background 0.1s;
+  }
+  .btn:hover:not(:disabled) { background: var(--bg-4); border-color: var(--border-soft); }
+  .btn:active:not(:disabled) { background: var(--bg-2); }
+
+  .btn.primary {
+    height: 68px;
+    background: linear-gradient(180deg, var(--accent) 0%, #1f6feb 100%);
+    border-color: #1f6feb;
+    color: white;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-align: center;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.2);
+  }
+  .btn.primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, var(--accent-hot) 0%, var(--accent) 100%);
+  }
+  .btn.primary.scan {
+    background: linear-gradient(180deg, #3fb950 0%, #238636 100%);
+    border-color: #238636;
+  }
+  .btn.primary.scan:hover:not(:disabled) {
+    background: linear-gradient(180deg, #56d364 0%, #3fb950 100%);
+  }
+
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .advanced { display: flex; flex-direction: column; gap: 8px; }
+  .advanced select, .advanced input { height: 48px; }
+  .advanced button { height: 48px; }
+
+  details { background: var(--bg-3); border-radius: 8px; border: 1px solid var(--border); }
+  details summary { padding: 12px 16px; cursor: pointer; font-weight: 600; font-size: 14px; color: var(--text-2); }
+  details[open] summary { border-bottom: 1px solid var(--border); }
+  details .body { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  details .body input { height: 48px; font-family: var(--mono); }
+  details .body button { height: 48px; background: var(--bg-4); }
+
+  /* ---------- Content: scan hero + log ---------- */
+  .scan-hero {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    min-height: 140px;
+    display: flex; flex-direction: column; justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .scan-hero.empty {
+    align-items: center; justify-content: center;
+    color: var(--text-dim);
+    cursor: default;
+  }
+  .scan-hero:not(.empty) { border-color: var(--ok); }
+  .scan-hero .label {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    display: flex; gap: 12px; align-items: center;
+  }
+  .badge {
+    background: var(--bg-4);
+    padding: 2px 10px; border-radius: 10px;
+    font-weight: 600; font-size: 11px; letter-spacing: 0.5px;
+    color: var(--text-2);
+  }
+  .badge.ok { background: rgba(63,185,80,0.15); color: var(--ok); }
+  .scan-hero .data {
+    font: 700 32px/1.2 var(--mono);
+    color: var(--text);
+    word-break: break-all;
+    max-height: 120px;
+    overflow: hidden;
+  }
+  .scan-hero.long .data { font-size: 22px; }
+  .scan-hero.very-long .data { font-size: 16px; }
+  .scan-hero .meta {
+    margin-top: 10px;
+    font-size: 12px; color: var(--text-dim);
+    font-family: var(--mono);
+    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .log-section {
+    display: flex; flex-direction: column;
+    min-height: 0;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .log-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .log-header h3 { margin: 0; font-size: 14px; color: var(--text-2); }
+  .log-header .filters { display: flex; gap: 6px; margin-left: 12px; }
+  .chip {
+    padding: 4px 12px; height: 30px;
+    background: var(--bg-3); border: 1px solid var(--border);
+    border-radius: 15px; font-size: 12px; font-weight: 600;
+    color: var(--text-2);
+  }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .log-header .pause {
+    margin-left: auto;
+    width: 34px; height: 30px;
+    background: var(--bg-3);
+    font-size: 13px;
+  }
+  .log-header .pause.paused { background: var(--warn); color: var(--bg); }
+
+  .log {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 0;
+    font: 13px/1.5 var(--mono);
+    min-height: 0;
+  }
+  .log::-webkit-scrollbar { width: 10px; }
+  .log::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 5px; }
+
+  .log-entry {
+    display: flex; gap: 10px;
+    padding: 3px 16px;
+    border-left: 3px solid transparent;
+  }
+  .log-entry:hover { background: rgba(255,255,255,0.02); }
+  .log-entry .time { color: var(--text-dim); flex-shrink: 0; min-width: 90px; }
+  .log-entry .tag { flex-shrink: 0; min-width: 30px; font-weight: 700; }
+  .log-entry .body { flex: 1; word-break: break-all; }
+
+  .log-entry.tx { border-left-color: var(--tx); }
+  .log-entry.tx .tag { color: var(--tx); }
+  .log-entry.rx { border-left-color: var(--rx); }
+  .log-entry.rx .tag { color: var(--rx); }
+  .log-entry.packet { border-left-color: var(--ok); }
+  .log-entry.packet .tag { color: var(--ok); }
+  .log-entry.packet-bad { border-left-color: var(--err); background: rgba(248, 81, 73, 0.05); }
+  .log-entry.packet-bad .tag { color: var(--err); }
+  .log-entry.scan { border-left-color: var(--accent); background: rgba(47, 129, 247, 0.05); }
+  .log-entry.scan .tag { color: var(--accent); }
+  .log-entry.info .tag { color: var(--text-dim); }
+  .log-entry.warn { border-left-color: var(--warn); }
+  .log-entry.warn .tag { color: var(--warn); }
+  .log-entry.error { border-left-color: var(--err); }
+  .log-entry.error .tag { color: var(--err); }
+
+  .log-entry .detail {
+    padding: 6px 12px;
+    margin: 4px 0;
+    background: var(--bg-3);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--text-2);
+  }
+
+  /* ---------- Stats drawer ---------- */
+  .drawer {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 10;
+  }
+  .drawer.open { display: flex; }
+  .drawer .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    min-width: 360px;
+    max-width: 80vw;
+  }
+  .drawer h2 { margin: 0 0 16px; font-size: 18px; }
+  .stat-row {
+    display: flex; justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 14px;
+  }
+  .stat-row:last-child { border: none; }
+  .stat-row .key { color: var(--text-dim); }
+  .stat-row .val { font-family: var(--mono); }
+  .drawer .close {
+    margin-top: 16px; width: 100%; height: 44px;
+    background: var(--accent); border-color: var(--accent); color: white; font-weight: 600;
+  }
+
+  .toast {
+    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--bg-3); border: 1px solid var(--border);
+    padding: 10px 18px; border-radius: 22px;
+    font-size: 13px; font-weight: 600;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+    z-index: 20;
+  }
+  .toast.show { opacity: 1; }
+
+  /* Landscape lock on small screens */
+  @media (orientation: portrait) and (max-width: 1100px) {
+    .app::before {
+      content: "Please rotate the tablet to landscape";
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; padding: 40px;
+      font-size: 18px; color: var(--text-2);
+      z-index: 999;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="status-pill" id="status-pill">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-label">Disconnected</span>
+    </div>
+    <div class="connect-form">
+      <select id="port-select"><option>(no ports)</option></select>
+      <input id="baud-input" type="number" value="9600" min="300" max="3000000">
+      <button id="connect-btn">Connect</button>
+    </div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="refresh-btn" title="Refresh ports">↻</button>
+      <button class="icon-btn" id="clear-log-btn" title="Clear log">🗑</button>
+      <button class="icon-btn" id="stats-btn" title="Stats">📊</button>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Sidebar commands -->
+    <aside class="sidebar">
+      <div class="group">
+        <h3>Quick actions</h3>
+        <button class="btn primary scan" data-action="scan">📷 SCAN</button>
+        <button class="btn primary" data-action="probe">⚡ PROBE</button>
+        <button class="btn primary" data-action="beep">🔔 BEEP</button>
+      </div>
+
+      <div class="group">
+        <h3>Power</h3>
+        <div class="btn-row">
+          <button class="btn" data-op="0xEB">WAKEUP</button>
+          <button class="btn" data-op="0xEB">SLEEP</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Scan control</h3>
+        <button class="btn" data-op="0xE9">SCAN ENABLE</button>
+        <button class="btn" data-op="0xEA">SCAN DISABLE</button>
+        <div class="btn-row">
+          <button class="btn" data-op="0xE4">START</button>
+          <button class="btn" data-op="0xE5">STOP</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Light</h3>
+        <div class="btn-row">
+          <button class="btn" data-op="0xC1">LIGHT ON</button>
+          <button class="btn" data-op="0xC0">LIGHT OFF</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Advanced</h3>
+        <div class="advanced">
+          <select id="adv-cmd">
+            <option value="">— choose command —</option>
+            <option value="0xD0">CMD_ACK (0xD0)</option>
+            <option value="0xD2">FLUSH_QUEUE (0xD2)</option>
+            <option value="0xD3">CAPABILITIES_REQUEST (0xD3)</option>
+            <option value="0xC6">PARAM_SEND (0xC6)</option>
+            <option value="0xC7">PARAM_REQUEST (0xC7)</option>
+            <option value="0xC8">PARAM_DEFAULTS (0xC8)</option>
+            <option value="0xE6">BEEP (0xE6)</option>
+          </select>
+          <input id="adv-data" placeholder="data hex (optional, e.g. 00 01)">
+          <button class="btn" id="adv-send">Send command</button>
+        </div>
+        <details>
+          <summary>Raw bytes (no framing)</summary>
+          <div class="body">
+            <input id="raw-hex" placeholder="e.g. ff 00 aa bb">
+            <button id="raw-send">Send raw</button>
+          </div>
+        </details>
+      </div>
+    </aside>
+
+    <!-- Main content area -->
+    <section class="content">
+      <div class="scan-hero empty" id="scan-hero">
+        <div class="placeholder">Waiting for scan…</div>
+      </div>
+
+      <div class="log-section">
+        <div class="log-header">
+          <h3>Log</h3>
+          <div class="filters">
+            <button class="chip active" data-filter="all">All</button>
+            <button class="chip" data-filter="packet">Packets</button>
+            <button class="chip" data-filter="scan">Scans</button>
+            <button class="chip" data-filter="error">Errors</button>
+          </div>
+          <button class="pause" id="pause-btn" title="Pause auto-scroll">⏸</button>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Stats drawer -->
+<div class="drawer" id="stats-drawer">
+  <div class="card">
+    <h2>Stats</h2>
+    <div class="stat-row"><span class="key">Port</span><span class="val" id="s-port">—</span></div>
+    <div class="stat-row"><span class="key">Baud rate</span><span class="val" id="s-baud">—</span></div>
+    <div class="stat-row"><span class="key">Bytes in</span><span class="val" id="s-bin">0</span></div>
+    <div class="stat-row"><span class="key">Bytes out</span><span class="val" id="s-bout">0</span></div>
+    <div class="stat-row"><span class="key">Packets ok</span><span class="val" id="s-pok">0</span></div>
+    <div class="stat-row"><span class="key">Packets bad</span><span class="val" id="s-pbad">0</span></div>
+    <div class="stat-row"><span class="key">Last error</span><span class="val" id="s-err">—</span></div>
+    <button class="close" id="stats-close">Close</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ==========================================================
+// State
+// ==========================================================
+const state = {
+  connected: false,
+  path: null,
+  baud: 9600,
+  ports: [],
+  stats: { bytesIn: 0, bytesOut: 0, packetsOk: 0, packetsBad: 0, lastError: null },
+  paused: false,
+  filter: 'all',
+  ws: null,
+  pendingOpen: false,
+  // beep: 0 = Short High 1 (reliable default)
+  beepDefault: '00',
+  lastSleepSeen: 'WAKEUP',
+}
+
+// ==========================================================
+// DOM helpers
+// ==========================================================
+const $ = id => document.getElementById(id)
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+const fmtTime = t => new Date(t).toISOString().substring(11, 23)
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show')
+  clearTimeout(toast._tm); toast._tm = setTimeout(() => t.classList.remove('show'), 1800)
+}
+
+// ==========================================================
+// Log
+// ==========================================================
+const MAX_LOG = 500
+function addLog(type, opts) {
+  const row = el('div', 'log-entry ' + type)
+  row.dataset.type = type
+  row.appendChild(el('span', 'time', fmtTime(opts.t || Date.now())))
+  row.appendChild(el('span', 'tag', opts.tag))
+  const body = el('div', 'body')
+  if (typeof opts.body === 'string') body.textContent = opts.body
+  else body.appendChild(opts.body)
+  row.appendChild(body)
+  if (opts.detail) {
+    const d = el('div', 'detail', opts.detail)
+    body.appendChild(d)
+  }
+  const log = $('log')
+  log.appendChild(row)
+  while (log.childElementCount > MAX_LOG) log.firstElementChild.remove()
+  applyFilter(row)
+  if (!state.paused) log.scrollTop = log.scrollHeight
+}
+
+function applyFilter(row) {
+  const f = state.filter
+  const t = row.dataset.type
+  let show = true
+  if (f === 'packet')  show = (t === 'packet' || t === 'packet-bad')
+  else if (f === 'scan')    show = (t === 'scan')
+  else if (f === 'error')   show = (t === 'packet-bad' || t === 'error')
+  row.style.display = show ? '' : 'none'
+}
+
+function reapplyFilterAll() {
+  $('log').querySelectorAll('.log-entry').forEach(applyFilter)
+}
+
+// ==========================================================
+// Scan hero
+// ==========================================================
+function showScan(scan) {
+  const hero = $('scan-hero')
+  hero.innerHTML = ''
+  hero.className = 'scan-hero'
+  if (scan.data.length > 80) hero.classList.add('long')
+  if (scan.data.length > 160) hero.classList.add('very-long')
+
+  const label = el('div', 'label')
+  label.appendChild(el('span', null, 'Latest scan'))
+  label.appendChild(el('span', 'badge ok', scan.barcode_type))
+  hero.appendChild(label)
+
+  hero.appendChild(el('div', 'data', scan.data || '(empty)'))
+  hero.appendChild(el('div', 'meta', 'hex: ' + scan.hex_data))
+  hero.onclick = () => {
+    if (scan.data) {
+      navigator.clipboard.writeText(scan.data).then(() => toast('Copied to clipboard'))
+    }
+  }
+}
+
+// ==========================================================
+// Status
+// ==========================================================
+function setStatus(s) {
+  state.connected = s.connected
+  state.path = s.path
+  state.baud = s.baud
+  const dot = $('status-dot')
+  const label = $('status-label')
+  dot.classList.remove('connected', 'connecting', 'error')
+  if (s.error) { dot.classList.add('error'); label.textContent = 'Error: ' + s.error }
+  else if (s.connected) { dot.classList.add('connected'); label.textContent = s.path + ' @ ' + s.baud }
+  else { label.textContent = 'Disconnected' }
+
+  const btn = $('connect-btn')
+  btn.textContent = s.connected ? 'Disconnect' : 'Connect'
+  btn.classList.toggle('disconnect', s.connected)
+  $('port-select').disabled = s.connected
+  $('baud-input').disabled = s.connected
+
+  // enable/disable all command buttons
+  document.querySelectorAll('.btn, #adv-send, #raw-send').forEach(b => b.disabled = !s.connected)
+}
+
+// ==========================================================
+// Stats
+// ==========================================================
+function setStats(s) {
+  state.stats = { ...state.stats, ...s }
+  $('s-port').textContent = state.path || '—'
+  $('s-baud').textContent = state.baud || '—'
+  $('s-bin').textContent = s.bytesIn ?? state.stats.bytesIn
+  $('s-bout').textContent = s.bytesOut ?? state.stats.bytesOut
+  $('s-pok').textContent = s.packetsOk ?? state.stats.packetsOk
+  $('s-pbad').textContent = s.packetsBad ?? state.stats.packetsBad
+  $('s-err').textContent = (s.lastError ?? state.stats.lastError) || '—'
+}
+
+// ==========================================================
+// Port list
+// ==========================================================
+function setPorts(ports) {
+  state.ports = ports
+  const sel = $('port-select')
+  sel.innerHTML = ''
+  if (ports.length === 0) {
+    sel.appendChild(el('option', null, '(no ports detected)'))
+    return
+  }
+  for (const p of ports) {
+    const o = document.createElement('option')
+    o.value = p.path
+    o.textContent = p.manufacturer ? `${p.path} — ${p.manufacturer}` : p.path
+    sel.appendChild(o)
+  }
+  // prefer COM3
+  const preferred = ports.find(p => p.path.toUpperCase() === 'COM3')
+  if (preferred) sel.value = preferred.path
+}
+
+// ==========================================================
+// WebSocket
+// ==========================================================
+function send(msg) {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify(msg))
+}
+function connectWs() {
+  const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'
+  state.ws = new WebSocket(url)
+  state.ws.onopen = () => { addLog('info', { tag: 'WS', body: 'connected to server' }); send({ type: 'getStatus' }) }
+  state.ws.onclose = () => { addLog('error', { tag: 'WS', body: 'disconnected — retrying…' }); setTimeout(connectWs, 1000) }
+  state.ws.onerror = () => {}
+  state.ws.onmessage = ev => {
+    let msg; try { msg = JSON.parse(ev.data) } catch { return }
+    handleMessage(msg)
+  }
+}
+
+function handleMessage(m) {
+  switch (m.type) {
+    case 'ports':    setPorts(m.ports); break
+    case 'status':   setStatus(m); break
+    case 'stats':    setStats(m); break
+    case 'tx':       addLog('tx', { t: m.t, tag: '▶', body: `${m.hex}`, detail: `${m.opcode_name} · ${m.length} bytes` }); break
+    case 'rx':       addLog('rx', { t: m.t, tag: '◀', body: `${m.hex}`, detail: `${m.length} bytes` }); break
+    case 'packet':   addLogPacket(m); break
+    case 'scan':     showScan(m); addLog('scan', { t: m.t, tag: '⬛', body: `${m.barcode_type}: "${m.data}"`, detail: 'hex: ' + m.hex_data }); break
+    case 'log':      addLog(m.level, { t: m.t, tag: m.level.toUpperCase(), body: m.message }); break
+  }
+}
+
+function addLogPacket(m) {
+  const p = m.parsed
+  if (!p.ok) {
+    addLog('packet-bad', {
+      t: m.t, tag: '✗',
+      body: `BAD ${p.opcode_name} (0x${(p.opcode||0).toString(16)}) len=${p.length} status=0x${(p.status||0).toString(16).padStart(2,'0')}`,
+      detail: `received=0x${(p.received_checksum||0).toString(16)} calculated=0x${(p.calculated_checksum||0).toString(16)} raw=${p.raw_hex}`,
+    })
+    return
+  }
+  let detail
+  if (p.capabilities) {
+    const c = p.capabilities
+    detail = `baud: [${c.baud_rates.join(', ')}]  ·  params: [${c.serial_params.join(', ')}]  ·  commands: [${c.commands.join(', ')}]`
+  } else if (p.nak_reason) {
+    detail = 'NAK: ' + p.nak_reason
+  } else if (p.event) {
+    detail = 'EVENT: ' + p.event
+  } else if (p.data_hex) {
+    detail = 'data: ' + p.data_hex
+  }
+  addLog('packet', {
+    t: m.t, tag: '✓',
+    body: `${p.opcode_name} (0x${p.opcode.toString(16).padStart(2,'0')}) len=${p.length} src=${p.source_name}`,
+    detail,
+  })
+}
+
+// ==========================================================
+// Event wiring
+// ==========================================================
+$('connect-btn').addEventListener('click', () => {
+  if (state.connected) send({ type: 'disconnect' })
+  else {
+    const path = $('port-select').value
+    const baud = parseInt($('baud-input').value, 10) || 9600
+    if (!path || path.startsWith('(')) { toast('No port available'); return }
+    send({ type: 'connect', path, baud })
+  }
+})
+
+$('refresh-btn').addEventListener('click', () => { send({ type: 'listPorts' }); toast('Refreshing ports…') })
+$('clear-log-btn').addEventListener('click', () => { $('log').innerHTML = ''; send({ type: 'clearBuffer' }) })
+
+$('stats-btn').addEventListener('click', () => { $('stats-drawer').classList.add('open'); setStats({}) })
+$('stats-close').addEventListener('click', () => $('stats-drawer').classList.remove('open'))
+$('stats-drawer').addEventListener('click', e => { if (e.target === $('stats-drawer')) $('stats-drawer').classList.remove('open') })
+
+// primary + secondary buttons
+document.querySelectorAll('[data-op]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    let opcode = parseInt(btn.dataset.op, 16)
+    // WAKEUP and SLEEP share 0xEB — scanner distinguishes by state, just send
+    send({ type: 'send', opcode })
+  })
+})
+
+document.querySelectorAll('[data-action]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const act = btn.dataset.action
+    if (act === 'probe' || act === 'scan') send({ type: 'sequence', name: act })
+    else if (act === 'beep') send({ type: 'send', opcode: 0xE6, data: state.beepDefault })
+  })
+})
+
+$('adv-send').addEventListener('click', () => {
+  const op = $('adv-cmd').value
+  if (!op) { toast('Pick a command'); return }
+  send({ type: 'send', opcode: parseInt(op, 16), data: $('adv-data').value })
+})
+
+$('raw-send').addEventListener('click', () => {
+  const hex = $('raw-hex').value.trim()
+  if (!hex) return
+  send({ type: 'sendRaw', hex })
+})
+
+// filters
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'))
+    chip.classList.add('active')
+    state.filter = chip.dataset.filter
+    reapplyFilterAll()
+  })
+})
+
+$('pause-btn').addEventListener('click', () => {
+  state.paused = !state.paused
+  $('pause-btn').classList.toggle('paused', state.paused)
+  $('pause-btn').textContent = state.paused ? '▶' : '⏸'
+})
+
+// ==========================================================
+// Boot
+// ==========================================================
+setStatus({ connected: false, path: null, baud: 9600 })
+connectWs()
+</script>
+</body>
+</html>

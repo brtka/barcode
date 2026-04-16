@@ -1,0 +1,22 @@
+{
+  "name": "barcode",
+  "version": "1.0.0",
+  "description": "Standalone Zebra SSI barcode scanner test tool",
+  "main": "barcode.js",
+  "bin": {
+    "barcode": "barcode.js"
+  },
+  "scripts": {
+    "start": "node barcode.js",
+    "blob": "node --experimental-sea-config sea-config.json"
+  },
+  "dependencies": {
+    "serialport": "^12.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

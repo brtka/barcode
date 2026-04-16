@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./dist/mac/barcode --help)",
+      "Bash(ls /Users/brle/code/barcode/node_modules/@serialport/bindings-cpp/prebuilds/*/)",
+      "Bash(./build.sh mac:*)",
+      "Read(//private/tmp/**)",
+      "Bash(cp /Users/brle/code/barcode/dist/mac/barcode ./barcode-sea-test)",
+      "Bash(timeout 3 ./barcode-sea-test --cli)",
+      "Bash(./build.sh win:*)"
+    ]
+  }
+}
